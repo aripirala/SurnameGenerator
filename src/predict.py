@@ -5,50 +5,38 @@
 import torch
 from utils import preprocess_text
 
-from model import ReviewPerceptronClassifier
-from utils import ReviewVectorizer
+from model import SurnameRNN_Embed_Generator
+from utils import decode_samples, SurnameVectorizer, sample_from_model
 from configs import args
 import os
 
 import torch.nn.functional as F
 
 
-def predict_rating(review, classifier, vectorizer, decision_threshold=0.5):
-    """Predict the rating of a review
-
-    Args:
-        review (str): the text of the review
-        classifier (ReviewClassifier): the trained model
-        vectorizer (ReviewVectorizer): the corresponding vectorizer
-        decision_threshold (float): The numerical boundary which separates the rating classes
-    """
-    review = preprocess_text(review)
-
-    vectorized_review = torch.tensor(vectorizer.vectorize(review))
-    print(vectorized_review)
-    result = classifier(vectorized_review.view(1, -1))
-
-    probability_value = torch.sigmoid(result).item()
-    index = 1
-    if probability_value < decision_threshold:
-        index = 0
-
-    return vectorizer.rating_vocab.lookup_index(index), probability_value
 
 if __name__ == '__main__':
-    test_review = "this is not so bad. There were some good dishes"
-
+    
+    num_names = 10
     #get the model and vectorizer paths
     model_pth = os.path.join(args.save_dir, args.model_state_file)
     vectorizer_pth = os.path.join(args.save_dir, args.vectorizer_file)
 
     #load vectorizer before loading the model
-    vectorizer = ReviewVectorizer.from_serializable_and_json(vectorizer_pth)
-    print(f'Length of review vocab is {len(vectorizer.review_vocab)}')
+    vectorizer = SurnameVectorizer.from_serializable_and_json(vectorizer_pth)
+    print(f'Length of nationality vocab is {len(vectorizer.nationality_vocab)}')
 
-    classifier = ReviewPerceptronClassifier(num_features=len(vectorizer.review_vocab), num_classes=1)
-    classifier.load_state_dict(torch.load(model_pth))
-    classifier = classifier.cpu()
+    model = SurnameRNN_Embed_Generator(num_features=len(vectorizer.surname_vocab), 
+                vocab_size=len(vectorizer.surname_vocab), rnn_hidden_size=200,
+                embedding_file_name=args.embedding_file_name, embedding_dim=args.embedding_dim,  
+                word_to_index=vectorizer.surname_vocab._token_to_idx, max_idx=len(vectorizer.surname_vocab),
+                freeze=True, batch_norm=True, dropout=True, activation_fn='RELU')
+    model.load_state_dict(torch.load(model_pth))
+    model = model.cpu()
 
-    prediction, probability = predict_rating(test_review, classifier, vectorizer, decision_threshold=0.5)
-    print(f"{test_review} -> {prediction} with a probability of {probability}")
+    
+    sampled_surnames = decode_samples(sample_from_model(model, vectorizer, num_samples=num_names), 
+                        vectorizer)
+    # Show results
+    print ("-"*15)
+    for i in range(num_names):
+        print (sampled_surnames[i])

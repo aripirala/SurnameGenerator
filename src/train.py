@@ -7,11 +7,12 @@ import torch.optim as optim
 from configs import args
 from dataset import SurnameDataset
 
-from model import SurnamePerceptronClassifier
+from model import SurnameRNN_Embed_Generator
 from tqdm import tqdm
 
 from utils import set_seed_everywhere, handle_dirs, make_train_state, \
-    generate_batches, compute_accuracy, update_train_state
+    generate_batches, compute_accuracy, update_train_state 
+from utils import sequence_loss as loss_func
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -41,12 +42,12 @@ if __name__ == '__main__':
     
     dataset = args.dataset
     vectorizer = args.vectorizer
-    classifier = args.classifier
+    model = args.model
 
-    classifier = classifier.to(args.device)
-
-    loss_func = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(classifier.parameters(), lr=args.learning_rate)
+    model = model.to(args.device)
+    
+    # loss_func = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                      mode='min', factor=0.5,
                                                      patience=1)
@@ -87,7 +88,7 @@ if __name__ == '__main__':
                                                 device=args.device)
                 running_loss = 0.0
                 running_acc = 0.0
-                classifier.train()
+                model.train()
 
                 for batch_index, batch_dict in enumerate(batch_generator):
                     # the training routine is these 5 steps:
@@ -97,18 +98,17 @@ if __name__ == '__main__':
                     optimizer.zero_grad()
 
                     # step 2. compute the output
-                    # print(f'Classifier is \n {classifier}')
-                    if args.architecture_type == 'RNN':
-                        y_pred = classifier(x_in=batch_dict['x_data'].float(), x_lengths=batch_dict['vector_len'])
-                    else:
-                        y_pred = classifier(x_in=batch_dict['x_data'].float())
+                    # print(f'model is \n {model}')
+                    
+                    y_pred = model(x_in=batch_dict['x_data'].float())
                     y_true = batch_dict['y_target']
 
                     # step 3. compute the loss
                     # print(f'y_pred shape is {y_pred.size()}')
                     # print(f'y_true shape is {y_true.size()}')
 
-                    loss = loss_func(y_pred, y_true)
+                    loss = loss_func(y_pred, y_true, mask_index = args.mask_index)
+                    
                     loss_t = loss.item()
                     running_loss += (loss_t - running_loss) / (batch_index + 1)
 
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                     optimizer.step()
                     # -----------------------------------------
                     # compute the accuracy
-                    acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type)
+                    acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type, mask_index=args.mask_index)
                     running_acc += (acc_t - running_acc) / (batch_index + 1)
 
                     # update bar
@@ -140,22 +140,19 @@ if __name__ == '__main__':
                                                 device=args.device)
                 running_loss = 0.
                 running_acc = 0.
-                classifier.eval()
+                model.eval()
 
                 for batch_index, batch_dict in enumerate(batch_generator):
-                    # compute the output
-                    if args.architecture_type == 'RNN':
-                        y_pred = classifier(x_in=batch_dict['x_data'].float(), x_lengths=batch_dict['vector_len'])
-                    else:
-                        y_pred = classifier(x_in=batch_dict['x_data'].float())
+                    # compute the output                    
+                    y_pred = model(x_in=batch_dict['x_data'].float())
                     
                     # step 3. compute the loss
-                    loss = loss_func(y_pred, batch_dict['y_target'])
+                    loss = loss_func(y_pred, batch_dict['y_target'], mask_index=args.mask_index)
                     loss_t = loss.item()
                     running_loss += (loss_t - running_loss) / (batch_index + 1)
 
                     # compute the accuracy
-                    acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type)
+                    acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type, mask_index=args.mask_index)
                     running_acc += (acc_t - running_acc) / (batch_index + 1)
 
                     val_bar.set_postfix(loss=running_loss,
@@ -166,7 +163,7 @@ if __name__ == '__main__':
                 train_state['val_loss'].append(running_loss)
                 train_state['val_acc'].append(running_acc)
 
-                train_state = update_train_state(args=args, model=classifier,
+                train_state = update_train_state(args=args, model=model,
                                                 train_state=train_state)
 
                 scheduler.step(train_state['val_loss'][-1])
@@ -187,8 +184,8 @@ if __name__ == '__main__':
 
     # compute the loss & accuracy on the test set using the best available model
     print('Computing the accuracy on the Test set')
-    classifier.load_state_dict(torch.load(train_state['model_filename']))
-    classifier = classifier.to(args.device)
+    model.load_state_dict(torch.load(train_state['model_filename']))
+    model = model.to(args.device)
 
     dataset.set_split('test')
     batch_generator = generate_batches(dataset,
@@ -196,22 +193,19 @@ if __name__ == '__main__':
                                         device=args.device)
     running_loss = 0.
     running_acc = 0.
-    classifier.eval()
+    model.eval()
 
     for batch_index, batch_dict in enumerate(batch_generator):
-        # compute the output
-        if args.architecture_type == 'RNN':
-            y_pred = classifier(x_in=batch_dict['x_data'].float(), x_lengths=batch_dict['vector_len'])
-        else:
-            y_pred = classifier(x_in=batch_dict['x_data'].float())
+        # compute the output        
+        y_pred = model(x_in=batch_dict['x_data'].float())
     
         # compute the loss
-        loss = loss_func(y_pred, batch_dict['y_target'])
+        loss = loss_func(y_pred, batch_dict['y_target'], mask_index=args.mask_index)
         loss_t = loss.item()
         running_loss += (loss_t - running_loss) / (batch_index + 1)
 
         # compute the accuracy
-        acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type)
+        acc_t = compute_accuracy(y_pred, batch_dict['y_target'], output_type=args.output_type, mask_index=args.mask_index)
         running_acc += (acc_t - running_acc) / (batch_index + 1)
         
         test_bar.set_postfix(loss=running_loss,

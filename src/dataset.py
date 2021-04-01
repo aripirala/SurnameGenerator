@@ -115,13 +115,13 @@ class SurnameDataset:
 
         # print(f'row is {row}')
 
-        surname_vector, vector_len = self.vectorizer.vectorize(row.surname)
+        surname_input, surname_output = self.vectorizer.vectorize(row.surname)
         nationality_index = self.vectorizer.nationality_vocab.lookup_token(row.nationality)
 
         return {
-            'x_data': surname_vector,
-            'y_target': nationality_index,
-            'vector_len': vector_len
+            'x_data': surname_input,
+            'y_target': surname_output,
+            'class_index': nationality_index
         }
 
     def get_num_batches(self, batch_size):
@@ -143,8 +143,8 @@ if __name__ == '__main__':
     print(f'Training dataset has {len(train_dataset)}')
     print('First five items are --')
     for i in range(5):
-        x, y, surname_len = train_dataset[i]['x_data'], train_dataset[i]['y_target'], train_dataset[i]['vector_len'] 
-        print(f'data {i+1}...\n\t{x}\ntarget -\t{y}\nsurname_length -\t{surname_len}')
+        x, y, class_idx = train_dataset[i]['x_data'], train_dataset[i]['y_target'], train_dataset[i]['class_index'] 
+        print(f'X_input {i+1}...\n\t{x}\nTarget -\n\t{y}\nClass Index -\t{class_idx}')
 
     surname_dataset.set_split('val')
     print(f'Validation dataset has {len(surname_dataset)}')

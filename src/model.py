@@ -11,40 +11,6 @@ import sys
 from utils import column_gather
 
 
-
-class SurnamePerceptronClassifier(nn.Module):
-    def __init__(self, num_features, num_classes):
-        super(SurnamePerceptronClassifier, self).__init__()
-        self.fc1 = nn.Linear(num_features, num_classes)
-
-    def forward(self, x_in, apply_sigmoid=False):
-        logits = self.fc1(x_in).squeeze()
-        if apply_sigmoid:
-            logits = torch.sigmoid(logits)
-
-        return logits
-
-class SurnameMLPClassifier(nn.Module):
-    def __init__(self, num_features, num_classes, hidden_layer_dim=None, activation_fn = 'RELU'):
-        super(SurnameMLPClassifier, self).__init__()
-        # self.fc1 = nn.Linear(num_features, num_classes)
-        layers = []
-        input_features = num_features
-        if hidden_layer_dim is not None:
-            for hidden_features in hidden_layer_dim:
-                layers.append(nn.Linear(input_features, hidden_features))
-                if activation_fn == 'RELU':
-                    layers.append(nn.ReLU())
-                input_features = hidden_features
-        layers.append(nn.Linear(input_features, num_classes))        
-        self.model = nn.Sequential(*layers)
-
-    def forward(self, x_in, apply_sigmoid=False):
-        logits = self.model(x_in).squeeze()
-        if apply_sigmoid:
-            logits = torch.sigmoid(logits)
-        return logits
-
 class Embedding:
     def __init__(self, num_features, embedding_dim=100, embedding_type='pre-trained', embedding_file_name=None, 
                     word_to_index=None, max_idx=1000, freeze=True, **kwargs):
@@ -94,47 +60,6 @@ class Embedding:
 
         return embed_mat
     
-class SurnameMLP_Embed_Classifier(Embedding, nn.Module):
-    def __init__(self, num_features, num_classes, hidden_layer_dim=None, activation_fn = 'RELU', 
-                    embedding_dim=100, embedding_type='pre-trained', embedding_file_name=None, 
-                    word_to_index=None, max_idx=1000, freeze=True, **kwargs):
-        
-        super(SurnameMLP_Embed_Classifier, self).__init__(num_features=num_features, embedding_dim=embedding_dim, 
-                    embedding_type=embedding_type, embedding_file_name=embedding_file_name, 
-                    word_to_index=word_to_index, max_idx=max_idx, freeze=freeze, **kwargs)
-        
-        
-        input_features = embedding_dim
-        layers = []
-
-        if hidden_layer_dim is not None:
-            for hidden_features in hidden_layer_dim:
-                layers.append(nn.Linear(input_features, hidden_features))
-                if activation_fn == 'RELU':
-                    layers.append(nn.ReLU())
-                    layers.append(nn.BatchNorm1d(hidden_features))
-                    layers.append(nn.Dropout(p=0.25))
-                    
-                input_features = hidden_features
-        layers.append(nn.Linear(input_features, num_classes))        
-        self.seq_model = nn.Sequential(*layers)
-       
-    def forward(self, x_in, apply_sigmoid=False):
-        # print(f'x_input shape is {x_in.size()}')
-        x_in = x_in.to(torch.long)
-        embed_out = self.embedding(x_in)
-        embed_out = embed_out.permute(0, 2, 1)
-        # print(f'embedding shape is {embed_out.size()}')
-        embed_out,_ = torch.max(embed_out, dim=2)
-        # print(f'embedding shape is {embed_out.size()}')
-        
-        # sys.exit()
-
-        logits = self.seq_model(embed_out.float()).squeeze()
-        if apply_sigmoid:
-            logits = torch.sigmoid(logits)
-        return logits
-
 
 class SurnameCNN_Embed_Classifier(Embedding, nn.Module):
     def __init__(self, num_features, num_classes, channel_list, activation_fn = 'RELU', max_pool=False,
@@ -191,13 +116,12 @@ class SurnameCNN_Embed_Classifier(Embedding, nn.Module):
             logits = torch.sigmoid(logits)
         return logits
 
-
-class SurnameRNN_Embed_Classifier(Embedding, nn.Module):
-    def __init__(self, num_features, num_classes, rnn_hidden_size, activation_fn = 'RELU', 
+class SurnameRNN_Embed_Generator(Embedding, nn.Module):
+    def __init__(self, num_features, vocab_size, rnn_hidden_size, activation_fn = 'RELU', 
                     embedding_dim=100, embedding_type=None, embedding_file_name=None, 
                     word_to_index=None, max_idx=1000, freeze=True, batch_norm=False, batch_first=True, dropout=False, **kwargs):
 
-        super(SurnameRNN_Embed_Classifier, self).__init__(num_features=num_features, embedding_dim=embedding_dim, 
+        super(SurnameRNN_Embed_Generator, self).__init__(num_features=num_features, embedding_dim=embedding_dim, 
                     embedding_type=embedding_type, embedding_file_name=embedding_file_name, 
                     word_to_index=word_to_index, max_idx=max_idx, freeze=freeze, **kwargs)
         
@@ -207,9 +131,9 @@ class SurnameRNN_Embed_Classifier(Embedding, nn.Module):
         self.fc1 = nn.Linear(in_features=rnn_hidden_size,
                          out_features=rnn_hidden_size)
         self.fc2 = nn.Linear(in_features=rnn_hidden_size,
-                          out_features=num_classes)
+                          out_features=vocab_size)
 
-    def forward(self, x_in, x_lengths=None, apply_sigmoid=False):
+    def forward(self, x_in, apply_softmax=False):
         """The forward pass of the classifier
         
         Args:
@@ -226,7 +150,7 @@ class SurnameRNN_Embed_Classifier(Embedding, nn.Module):
         x_in = x_in.to(torch.long)
         x_embed = self.embedding(x_in) # => batch_size x seq_len x emb_dim
         
-        # print(f'embedding shape is {embed_out.size()}')
+        # print(f'embedding shape is {x_embed.size()}')
         # embed_out,_ = torch.max(embed_out, dim=2)
         # print(f'embedding shape is {embed_out.size()}')
         
@@ -236,20 +160,38 @@ class SurnameRNN_Embed_Classifier(Embedding, nn.Module):
 
         # print(f'rnn output shape is {y_out.size()}')
         # print(f'x_lengths shape is {x_lengths.size()}')
-        if x_lengths is not None:
-            y_out = column_gather(y_out, x_lengths)
-        else:
-            y_out = y_out[:, -1, :]
-
-        # print(f'After column gather: y_out shape is {y_out.size()}')
+        
+        # sys.exit()
+        # reshape the y_out into a 2D matrix into (-1, feat_size) ie bs*seq_len x feat_size
+        batch_size, seq_len, feat_size = y_out.shape
+        y_out = y_out.contiguous().view(batch_size*seq_len, feat_size)
+        
         y_out = F.relu(self.fc1(F.dropout(y_out, 0.5)))
-        logits = self.fc2(F.dropout(y_out, 0.5)).squeeze()
+        y_out = self.fc2(F.dropout(y_out, 0.5)).squeeze()
 
-        if apply_sigmoid:
-            logits = torch.sigmoid(logits)
-        return logits
+        if apply_softmax:
+            y_out = F.softmax(y_out, dim=1)
+        
+        feat_size = y_out.shape[-1]
+        # print(f'Feature size is {feat_size}')
+       # reshape it back to batch_size x seq_len x feat_size
+        y_out = y_out.view(batch_size, seq_len, feat_size)
+        # print(f'y_out size is {y_out.shape}')
+        # sys.exit()
+        return y_out
 
 if __name__ == '__main__':
     rnn_hidden_size = 200
-    RNNClassifier = SurnameRNN_Embed_Classifier(200, 1, rnn_hidden_size)
-    print(RNNClassifier)
+    seq_len = 20
+    vocab_size = 52
+    bs = 32
+    embed_dim = 50
+
+    RNNGenerator = SurnameRNN_Embed_Generator(200, vocab_size, rnn_hidden_size, embedding_dim=embed_dim)
+    x_in = torch.empty((bs, seq_len), dtype=torch.long).random_(10)
+    print(x_in)
+    print(RNNGenerator)
+
+    y_out = RNNGenerator(x_in)
+
+    

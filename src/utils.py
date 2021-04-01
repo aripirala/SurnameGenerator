@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import json
 import re
 import sys
+import torch.nn.functional as F
 # from configs import args
 
 
@@ -175,12 +176,14 @@ class SurnameVectorizer(object):
         return self.vectorize_embedding(surname)
         
     def vectorize_embedding(self, surname):
-        """Create a collapsed one-hot code vector fo the surname
+        """Create two vectors with list of indices of the tokens ready to be consumed by the
+           embedding layer
 
         Args:
             surname (str): the surname in the str format
         Returns:
-            token_ids (np.array): np array of indices of the tokens in the vocab
+            from_vector (np.array): np array of indices of the tokens in the vocab
+            to_vector (np.array): np array of indices of the tokens in the vocab
         """
         token_ids = np.zeros(self.max_len, dtype=np.int64)
         token_ids.fill(self.surname_vocab.mask_index)
@@ -193,8 +196,11 @@ class SurnameVectorizer(object):
             index = self.surname_vocab.lookup_token(token) # get index for the token from the vocab class
             token_ids[id+1] = index
         token_ids[id+1] = self.surname_vocab.end_seq_index
-        vector_len = id+2 # length of surname vector including begin and end tokens
-        return token_ids, vector_len
+        
+        from_vector = token_ids[:-1]
+        to_vector = token_ids[1:]
+        
+        return from_vector, to_vector
     
     def vectorize_onehot(self, surname):
         #TODO: need to refactor to handle new SequenceVocabulary Class
@@ -382,16 +388,30 @@ def update_train_state(args, model, train_state):
 
     return train_state
 
-def compute_accuracy(y_pred, y_target, output_type='one_class'):
-    y_target = y_target.cpu()
+def compute_accuracy(y_pred, y_true, output_type='one_class', mask_index=0):
+    y_target = y_true.cpu()
     y_pred = y_pred.cpu()
+    y_pred, y_true = normalize_sizes(y_pred, y_true)
+
+    # print("in compute accuracy")
+    # print(f'y_pred shape is {y_pred.size()}')
+    # print(f'y_true shape is {y_true.size()}')
 
     if output_type=='one_class':
         y_pred_indices = (torch.sigmoid(y_pred)>0.5).long()#.max(dim=1)[1]
     else:
         y_pred_indices = torch.argmax(y_pred, dim=1)
-    n_correct = torch.eq(y_pred_indices, y_target).sum().item()
-    return n_correct / len(y_pred_indices) * 100
+    
+    correct_indices = torch.eq(y_pred_indices, y_true).float()
+    valid_indices = torch.ne(y_true, mask_index).float()
+
+    # print(f'correct indices shape is {correct_indices.shape}')
+    # print(f'valid indices shape is {valid_indices.shape}')
+
+    n_correct = (correct_indices*valid_indices).sum().item()
+    n_valid = valid_indices.sum().item()
+
+    return n_correct / n_valid * 100
 
 def set_seed_everywhere(seed, cuda):
     np.random.seed(seed)
@@ -435,3 +455,83 @@ def column_gather(y_out, x_lengths):
         out.append(y_out[batch_index, column_index])
 
     return torch.stack(out)
+
+def sample_from_model(model, vectorizer, num_samples=1, sample_size=20, 
+                      temperature=1.0):
+    """Sample a sequence of indices from the model
+    
+    Args:
+        model (SurnameGenerationModel): the trained model
+        vectorizer (SurnameVectorizer): the corresponding vectorizer
+        num_samples (int): the number of samples
+        sample_size (int): the max length of the samples
+        temperature (float): accentuates or flattens 
+            the distribution. 
+            0.0 < temperature < 1.0 will make it peakier. 
+            temperature > 1.0 will make it more uniform
+    Returns:
+        indices (torch.Tensor): the matrix of indices; 
+        shape = (num_samples, sample_size)
+    """
+    begin_seq_index = [vectorizer.surname_vocab.begin_seq_index 
+                       for _ in range(num_samples)]
+    begin_seq_index = torch.tensor(begin_seq_index, 
+                                   dtype=torch.int64).unsqueeze(dim=1)
+    indices = [begin_seq_index]
+    h_t = None
+    
+    for time_step in range(sample_size):
+        x_t = indices[time_step]
+        x_emb_t = model.embedding(x_t)
+        rnn_out_t, h_t = model.rnn(x_emb_t, h_t)
+        prediction_vector = model.fc2(model.fc1(rnn_out_t.squeeze(dim=1)))
+        probability_vector = F.softmax(prediction_vector / temperature, dim=1)
+        indices.append(torch.multinomial(probability_vector, num_samples=1))
+    indices = torch.stack(indices).squeeze().permute(1, 0)
+    return indices
+
+def decode_samples(sampled_indices, vectorizer):
+    """Transform indices into the string form of a surname
+    
+    Args:
+        sampled_indices (torch.Tensor): the inidces from `sample_from_model`
+        vectorizer (SurnameVectorizer): the corresponding vectorizer
+    """
+    decoded_surnames = []
+    vocab = vectorizer.surname_vocab
+    
+    for sample_index in range(sampled_indices.shape[0]):
+        surname = ""
+        for time_step in range(sampled_indices.shape[1]):
+            sample_item = sampled_indices[sample_index, time_step].item()
+            if sample_item == vocab.begin_seq_index:
+                continue
+            elif sample_item == vocab.end_seq_index:
+                break
+            else:
+                surname += vocab.lookup_index(sample_item)
+        decoded_surnames.append(surname)
+    return decoded_surnames
+
+def normalize_sizes(y_pred, y_true):
+    """Normalize tensor sizes
+    
+    Args:
+        y_pred (torch.Tensor): the output of the model
+            If a 3-dimensional tensor, reshapes to a matrix
+        y_true (torch.Tensor): the target predictions
+            If a matrix, reshapes to be a vector
+    """
+    if len(y_pred.size()) == 3:
+        y_pred = y_pred.contiguous().view(-1, y_pred.size(2))
+    if len(y_true.size()) == 2:
+        y_true = y_true.contiguous().view(-1)
+    return y_pred, y_true
+
+def sequence_loss(y_pred, y_true, mask_index):
+    y_pred, y_true = normalize_sizes(y_pred, y_true)
+    # print("in sequence loss")
+    # print(f'y_pred shape is {y_pred.size()}')
+    # print(f'y_true shape is {y_true.size()}')
+    # print(y_true)
+    return F.cross_entropy(y_pred, y_true, ignore_index=mask_index)
