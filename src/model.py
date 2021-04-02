@@ -119,7 +119,8 @@ class SurnameCNN_Embed_Classifier(Embedding, nn.Module):
 class SurnameRNN_Embed_Generator(Embedding, nn.Module):
     def __init__(self, num_features, vocab_size, rnn_hidden_size, activation_fn = 'RELU', 
                     embedding_dim=100, embedding_type=None, embedding_file_name=None, 
-                    word_to_index=None, max_idx=1000, freeze=True, batch_norm=False, batch_first=True, dropout=False, **kwargs):
+                    word_to_index=None, max_idx=1000, freeze=True, batch_norm=False, 
+                    batch_first=True, dropout=False, conditional=False, conditional_class_count = None, **kwargs):
 
         super(SurnameRNN_Embed_Generator, self).__init__(num_features=num_features, embedding_dim=embedding_dim, 
                     embedding_type=embedding_type, embedding_file_name=embedding_file_name, 
@@ -132,8 +133,11 @@ class SurnameRNN_Embed_Generator(Embedding, nn.Module):
                          out_features=rnn_hidden_size)
         self.fc2 = nn.Linear(in_features=rnn_hidden_size,
                           out_features=vocab_size)
+        self.conditional = conditional
 
-    def forward(self, x_in, apply_softmax=False):
+        self.nationality_emb = nn.Embedding(conditional_class_count, rnn_hidden_size)
+
+    def forward(self, x_in, nationality_index=None, apply_softmax=False):
         """The forward pass of the classifier
         
         Args:
@@ -156,7 +160,14 @@ class SurnameRNN_Embed_Generator(Embedding, nn.Module):
         
         # sys.exit()
 
-        y_out, _ = self.rnn(x_embed.float())
+        h_n = None
+        if self.conditional:
+            if nationality_index==None:
+                raise Exception("Nationality index cannot be None")
+            else:
+                h_n = self.nationality_emb(nationality_index).unsqueeze(0) # => batch_size x rnn_hidden_size
+
+        y_out, _ = self.rnn(x_embed.float(), h_n)
 
         # print(f'rnn output shape is {y_out.size()}')
         # print(f'x_lengths shape is {x_lengths.size()}')
@@ -166,7 +177,7 @@ class SurnameRNN_Embed_Generator(Embedding, nn.Module):
         batch_size, seq_len, feat_size = y_out.shape
         y_out = y_out.contiguous().view(batch_size*seq_len, feat_size)
         
-        y_out = F.relu(self.fc1(F.dropout(y_out, 0.5)))
+        # y_out = F.relu(self.fc1(F.dropout(y_out, 0.5)))
         y_out = self.fc2(F.dropout(y_out, 0.5)).squeeze()
 
         if apply_softmax:

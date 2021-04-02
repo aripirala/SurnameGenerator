@@ -12,7 +12,7 @@ from utils import handle_dirs
 args = Namespace(
     # Data and Path information
     frequency_cutoff=25,
-    model_state_file='model_rnn_32_3.pth',
+    model_state_file='model_rnn_cond_32_5.pth',
     data_csv='../input/surnames_with_splits.csv',
     save_dir='../experiment/RNN/',
     vectorizer_file='vectorizer.json',
@@ -21,12 +21,14 @@ args = Namespace(
     dataset=None,
     architecture_type=None,
     output_type='multi_class',
+    conditional=True,
     # No Model hyper parameters
     # Training hyper parameters
     batch_size=128,
     early_stopping_criteria=5,
     learning_rate=0.001,
-    num_epochs=200,
+    num_epochs=100,
+    rnn_hidden_size = 32,
     seed=1337,
     # Runtime options
     catch_keyboard_interrupt=True,
@@ -76,10 +78,11 @@ args.mask_index = vectorizer.surname_vocab.mask_index
 # args.architecture_type = 'CNN'
 
 model = SurnameRNN_Embed_Generator(num_features=len(vectorizer.surname_vocab), 
-                vocab_size=len(vectorizer.surname_vocab), rnn_hidden_size=200,
+                vocab_size=len(vectorizer.surname_vocab), rnn_hidden_size=args.rnn_hidden_size,
                 embedding_file_name=args.embedding_file_name, embedding_dim=args.embedding_dim,  
                 word_to_index=vectorizer.surname_vocab._token_to_idx, max_idx=len(vectorizer.surname_vocab),
-                freeze=True, batch_norm=True, dropout=True, activation_fn='RELU')
+                freeze=True, batch_norm=True, dropout=True, activation_fn='RELU',
+                conditional=args.conditional, conditional_class_count=len(vectorizer.nationality_vocab))
 args.architecture_type = 'RNN'
 
 

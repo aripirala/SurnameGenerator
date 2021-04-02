@@ -100,7 +100,7 @@ if __name__ == '__main__':
                     # step 2. compute the output
                     # print(f'model is \n {model}')
                     
-                    y_pred = model(x_in=batch_dict['x_data'].float())
+                    y_pred = model(x_in=batch_dict['x_data'], nationality_index=batch_dict['nationality_index'])
                     y_true = batch_dict['y_target']
 
                     # step 3. compute the loss
@@ -144,7 +144,7 @@ if __name__ == '__main__':
 
                 for batch_index, batch_dict in enumerate(batch_generator):
                     # compute the output                    
-                    y_pred = model(x_in=batch_dict['x_data'].float())
+                    y_pred = model(x_in=batch_dict['x_data'], nationality_index=batch_dict['nationality_index'])
                     
                     # step 3. compute the loss
                     loss = loss_func(y_pred, batch_dict['y_target'], mask_index=args.mask_index)
@@ -197,7 +197,7 @@ if __name__ == '__main__':
 
     for batch_index, batch_dict in enumerate(batch_generator):
         # compute the output        
-        y_pred = model(x_in=batch_dict['x_data'].float())
+        y_pred = model(x_in=batch_dict['x_data'], nationality_index=batch_dict['nationality_index'])
     
         # compute the loss
         loss = loss_func(y_pred, batch_dict['y_target'], mask_index=args.mask_index)

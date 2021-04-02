@@ -46,7 +46,7 @@ class SurnameDataset:
         """
         surnames_df = pd.read_csv(surnames_csv)
         train_surnames_df = surnames_df[surnames_df.split=='train']
-        vectorizer = SurnameVectorizer.from_dataframe(train_surnames_df, vector_type=vector_type, max_len=max_len)
+        vectorizer = SurnameVectorizer.from_dataframe(train_surnames_df, vector_type=vector_type, max_len=max_len, cutoff=0)
         print(f'Vectorizer created')
         return cls(surnames_df, vectorizer)
 
@@ -121,7 +121,7 @@ class SurnameDataset:
         return {
             'x_data': surname_input,
             'y_target': surname_output,
-            'class_index': nationality_index
+            'nationality_index': nationality_index
         }
 
     def get_num_batches(self, batch_size):

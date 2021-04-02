@@ -237,25 +237,20 @@ class SurnameVectorizer(object):
         for nationality in sorted(set(surnames_df.nationality)):
             nationality_vocab.add_token(nationality)
 
-        # Add words that meet the cutoff to the surname vocab
-        char_counter = Counter()
         if max_len is None:
             max_surname_len = 0
-        for surname in surnames_df.surname:
-            # review_list = review.split(" ")
-            surname_len = len(surname)
+
+        for _ , row in surnames_df.iterrows():
+            surname_len = len(row.surname)
             if max_len is None:
                 if max_surname_len < surname_len:
                     max_surname_len = surname_len
-            for char in surname:
-                if char not in string.punctuation:
-                    char_counter[char] += 1
+            for char in row.surname:
+                surname_vocab.add_token(char)
+            nationality_vocab.add_token(row.nationality)
+
         if max_len is None:
             max_len = max_surname_len + 2
-             # adjust the max len to add both begin and end seq tokens to the surname
-        for char, count in char_counter.items():
-            if count >= cutoff:
-                surname_vocab.add_token(char)
 
         return cls(surname_vocab, nationality_vocab, vector_type, max_len)
 
@@ -389,7 +384,7 @@ def update_train_state(args, model, train_state):
     return train_state
 
 def compute_accuracy(y_pred, y_true, output_type='one_class', mask_index=0):
-    y_target = y_true.cpu()
+    y_true = y_true.cpu()
     y_pred = y_pred.cpu()
     y_pred, y_true = normalize_sizes(y_pred, y_true)
 
@@ -456,13 +451,14 @@ def column_gather(y_out, x_lengths):
 
     return torch.stack(out)
 
-def sample_from_model(model, vectorizer, num_samples=1, sample_size=20, 
+def sample_from_model(model, vectorizer, nationalities = None, num_samples=1, sample_size=20, 
                       temperature=1.0):
     """Sample a sequence of indices from the model
     
     Args:
         model (SurnameGenerationModel): the trained model
         vectorizer (SurnameVectorizer): the corresponding vectorizer
+        nationalities (list): a list of integers representing nationalities
         num_samples (int): the number of samples
         sample_size (int): the max length of the samples
         temperature (float): accentuates or flattens 
@@ -473,18 +469,23 @@ def sample_from_model(model, vectorizer, num_samples=1, sample_size=20,
         indices (torch.Tensor): the matrix of indices; 
         shape = (num_samples, sample_size)
     """
+    h_t = None
+    if nationalities != None:
+        num_samples = len(nationalities)
+        nationality_indices = torch.tensor(nationalities, dtype=torch.int64).unsqueeze(dim=0)
+        h_t = model.nationality_emb(nationality_indices)
     begin_seq_index = [vectorizer.surname_vocab.begin_seq_index 
                        for _ in range(num_samples)]
     begin_seq_index = torch.tensor(begin_seq_index, 
                                    dtype=torch.int64).unsqueeze(dim=1)
     indices = [begin_seq_index]
-    h_t = None
+    
     
     for time_step in range(sample_size):
         x_t = indices[time_step]
         x_emb_t = model.embedding(x_t)
         rnn_out_t, h_t = model.rnn(x_emb_t, h_t)
-        prediction_vector = model.fc2(model.fc1(rnn_out_t.squeeze(dim=1)))
+        prediction_vector = model.fc2(rnn_out_t.squeeze(dim=1))
         probability_vector = F.softmax(prediction_vector / temperature, dim=1)
         indices.append(torch.multinomial(probability_vector, num_samples=1))
     indices = torch.stack(indices).squeeze().permute(1, 0)
