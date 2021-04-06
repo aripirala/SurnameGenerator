@@ -12,7 +12,7 @@ from utils import handle_dirs
 args = Namespace(
     # Data and Path information
     frequency_cutoff=25,
-    model_state_file='model_rnn_cond_32_5.pth',
+    model_state_file='model_rnn_cond_32_7.pth',
     data_csv='../input/surnames_with_splits.csv',
     save_dir='../experiment/RNN/',
     vectorizer_file='vectorizer.json',
@@ -37,7 +37,7 @@ args = Namespace(
     reload_from_files=False,
     train=True, # Flag to train your network
     # If embedding layer is used
-    max_len = 20,
+    max_len = None,
     vector_type='embedding', # 'one_hot'
     embedding_type = 'train', #'pre-trained',
     embedding_file_name= '../input/glove.6B.50d.txt',
@@ -79,12 +79,11 @@ args.mask_index = vectorizer.surname_vocab.mask_index
 
 model = SurnameRNN_Embed_Generator(num_features=len(vectorizer.surname_vocab), 
                 vocab_size=len(vectorizer.surname_vocab), rnn_hidden_size=args.rnn_hidden_size,
-                embedding_file_name=args.embedding_file_name, embedding_dim=args.embedding_dim,  
-                word_to_index=vectorizer.surname_vocab._token_to_idx, max_idx=len(vectorizer.surname_vocab),
+                embedding_file_name=None, embedding_dim=args.embedding_dim,  
+                word_to_index=None, max_idx=None,
                 freeze=True, batch_norm=True, dropout=True, activation_fn='RELU',
                 conditional=args.conditional, conditional_class_count=len(vectorizer.nationality_vocab))
 args.architecture_type = 'RNN'
-
 
 args.model = model
 args.vectorizer = vectorizer

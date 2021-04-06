@@ -114,6 +114,7 @@ if __name__ == '__main__':
 
                     # step 4. use loss to produce gradients
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm(model.parameters(), 0.25)
 
                     # step 5. use optimizer to take gradient step
                     optimizer.step()

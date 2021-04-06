@@ -176,29 +176,35 @@ class SurnameVectorizer(object):
         return self.vectorize_embedding(surname)
         
     def vectorize_embedding(self, surname):
-        """Create two vectors with list of indices of the tokens ready to be consumed by the
-           embedding layer
-
-        Args:
-            surname (str): the surname in the str format
-        Returns:
-            from_vector (np.array): np array of indices of the tokens in the vocab
-            to_vector (np.array): np array of indices of the tokens in the vocab
-        """
-        token_ids = np.zeros(self.max_len, dtype=np.int64)
-        token_ids.fill(self.surname_vocab.mask_index)
-
-        token_ids[0]= self.surname_vocab.begin_seq_index # add index for begin seq
-
-        for id, token in enumerate(surname):
-            if id+1 >= self.max_len-1:
-                break
-            index = self.surname_vocab.lookup_token(token) # get index for the token from the vocab class
-            token_ids[id+1] = index
-        token_ids[id+1] = self.surname_vocab.end_seq_index
+        """Vectorize a surname into a vector of observations and targets
         
-        from_vector = token_ids[:-1]
-        to_vector = token_ids[1:]
+        The outputs are the vectorized surname split into two vectors:
+            surname[:-1] and surname[1:]
+        At each timestep, the first vector is the observation and the second vector is the target. 
+        
+        Args:
+            surname (str): the surname to be vectorized
+        Returns:
+            a tuple: (from_vector, to_vector)
+            from_vector (numpy.ndarray): the observation vector 
+            to_vector (numpy.ndarray): the target prediction vector
+        """
+        indices = [self.surname_vocab.begin_seq_index] 
+        indices.extend(self.surname_vocab.lookup_token(token) for token in surname)
+        indices.append(self.surname_vocab.end_seq_index)
+
+        if self.max_len < 0:
+            self.max_len = len(indices) - 1
+
+        from_vector = np.zeros(self.max_len, dtype=np.int64)         
+        from_indices = indices[:-1]
+        from_vector[:len(from_indices)] = from_indices
+        from_vector[len(from_indices):] = self.surname_vocab.mask_index
+
+        to_vector = np.zeros(self.max_len, dtype=np.int64)
+        to_indices = indices[1:]
+        to_vector[:len(to_indices)] = to_indices
+        to_vector[len(to_indices):] = self.surname_vocab.mask_index
         
         return from_vector, to_vector
     
@@ -395,7 +401,7 @@ def compute_accuracy(y_pred, y_true, output_type='one_class', mask_index=0):
     if output_type=='one_class':
         y_pred_indices = (torch.sigmoid(y_pred)>0.5).long()#.max(dim=1)[1]
     else:
-        y_pred_indices = torch.argmax(y_pred, dim=1)
+        _, y_pred_indices = y_pred.max(dim=1)
     
     correct_indices = torch.eq(y_pred_indices, y_true).float()
     valid_indices = torch.ne(y_true, mask_index).float()

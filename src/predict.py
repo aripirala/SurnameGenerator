@@ -32,10 +32,12 @@ if __name__ == '__main__':
                 freeze=True, batch_norm=True, dropout=True, activation_fn='RELU',
                 conditional=args.conditional, conditional_class_count=len(vectorizer.nationality_vocab))
 
+    print(f'loading the model from {model_pth}')
     model.load_state_dict(torch.load(model_pth))
     model = model.cpu()
 
     if args.conditional:
+        print('Generating conditional outputs')
         for index in range(len(vectorizer.nationality_vocab)):
             nationality = vectorizer.nationality_vocab.lookup_index(index)
             print("Sampled for {}: ".format(nationality))

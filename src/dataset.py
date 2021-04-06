@@ -137,13 +137,14 @@ class SurnameDataset:
 if __name__ == '__main__':
     file_path = '../input/surnames_with_splits.csv'
     print(f'file path is {file_path}')
-    surname_dataset = SurnameDataset.load_dataset_and_make_vectorizer(file_path, vector_type='embedding', max_len=25)
+    surname_dataset = SurnameDataset.load_dataset_and_make_vectorizer(file_path, vector_type='embedding', max_len=None)
     train_dataset = surname_dataset
     print(f'max_len is {train_dataset.vectorizer.max_len}')
     print(f'Training dataset has {len(train_dataset)}')
-    print('First five items are --')
-    for i in range(5):
-        x, y, class_idx = train_dataset[i]['x_data'], train_dataset[i]['y_target'], train_dataset[i]['class_index'] 
+    print('Random five items are --')
+    random_5 = np.random.randint(len(train_dataset), size=5)
+    for i in random_5:
+        x, y, class_idx = train_dataset[i]['x_data'], train_dataset[i]['y_target'], train_dataset[i]['nationality_index'] 
         print(f'X_input {i+1}...\n\t{x}\nTarget -\n\t{y}\nClass Index -\t{class_idx}')
 
     surname_dataset.set_split('val')
